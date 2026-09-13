@@ -179,6 +179,7 @@ func (b *Backend) Configure(_ context.Context, cfg Config) error {
 		closed:    make(chan struct{}),
 		extractor: runExtractorChild,
 	}
+	next.startCacheSweeper(CacheSweepInterval)
 	b.mu.Lock()
 	b.current = next
 	b.mu.Unlock()
@@ -216,6 +217,23 @@ func (r *runtime) close() {
 	r.client.http.CloseIdleConnections()
 	r.cache.close()
 	close(r.closed)
+}
+
+func (r *runtime) startCacheSweeper(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-r.ctx.Done():
+				return
+			case now := <-ticker.C:
+				r.cache.sweep(now)
+			}
+		}
+	}()
 }
 
 // acquireRequest pins both the upstream connection and its cache until the
@@ -529,8 +547,8 @@ func (r *runtime) extractJob(authorized authorizedRequest, reservation *cacheRes
 	if reservation == nil {
 		return apiError(503, "cache_full")
 	}
-	defer reservation.release()
 	defer func() { <-r.extract }()
+	defer reservation.release()
 	if r.ctx.Err() != nil {
 		return apiError(503, "runtime_stopped")
 	}
@@ -540,7 +558,7 @@ func (r *runtime) extractJob(authorized authorizedRequest, reservation *cacheRes
 	if err != nil {
 		return apiError(503, "cache_unavailable")
 	}
-	defer func() { removeOwnedDir(r.cache, jobDir, ".job-") }()
+	reservation.jobDir = jobDir
 	inputPath := filepath.Join(jobDir, "archive")
 	outputPath := filepath.Join(jobDir, "pages")
 	creds := credentials{
@@ -627,13 +645,6 @@ func writeBoundedFile(path string, reader io.Reader, max int64) (int64, error) {
 		return written, fmt.Errorf("archive exceeds limit")
 	}
 	return written, file.Sync()
-}
-
-func removeOwnedDir(cache *pageCache, path, prefix string) {
-	if cache == nil || !cache.ownedPath(path) || !strings.HasPrefix(filepath.Base(path), prefix) {
-		return
-	}
-	_ = os.RemoveAll(path)
 }
 
 func mapDownloadError(err error) error {

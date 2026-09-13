@@ -19,6 +19,10 @@ const cacheOwnerMarker = ".silo-comic-pages-owner"
 
 const cacheOwnerContents = "silo-comic-pages-cache-v1\n"
 
+// Only one job is admitted at a time. Stop admitting jobs if repeated cleanup
+// failures accumulate this many directories, even when their byte limits are tiny.
+const maxPendingCleanup = 128
+
 type cachedPage struct {
 	name      string
 	file      string
@@ -34,6 +38,7 @@ type cacheEntry struct {
 	expiresAt time.Time
 	lastUsed  time.Time
 	active    int
+	retired   bool
 }
 
 type pageHandle struct {
@@ -55,9 +60,11 @@ func (h *pageHandle) release() {
 }
 
 type cacheReservation struct {
-	cache *pageCache
-	bytes int64
-	used  bool
+	cache     *pageCache
+	bytes     int64
+	jobDir    string
+	committed bool
+	used      bool
 }
 
 type pageCache struct {
@@ -69,6 +76,9 @@ type pageCache struct {
 	usedBytes   int64
 	reserved    int64
 	lease       *os.File
+	pending     map[string]int64
+	removeAll   func(string) error
+	closed      bool
 }
 
 func newPageCache(root string, maxBytes int64, fallbackTTL time.Duration) (*pageCache, error) {
@@ -99,6 +109,8 @@ func newPageCache(root string, maxBytes int64, fallbackTTL time.Duration) (*page
 		fallbackTTL: fallbackTTL,
 		entries:     make(map[string]*cacheEntry),
 		lease:       lease,
+		pending:     make(map[string]int64),
+		removeAll:   os.RemoveAll,
 	}
 	if err := cache.removeOwnedDirectories(); err != nil {
 		cache.close()
@@ -108,10 +120,21 @@ func newPageCache(root string, maxBytes int64, fallbackTTL time.Duration) (*page
 }
 
 func (c *pageCache) close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	// The runtime drains requests, jobs and the sweeper before releasing its lease.
+	for _, entry := range c.entries {
+		c.removeLocked(entry)
+	}
+	c.retryPendingLocked()
 	if c.lease != nil {
 		_ = c.lease.Close()
 		c.lease = nil
 	}
+	c.closed = true
 }
 
 func ensureOwnedRoot(root string) error {
@@ -196,10 +219,10 @@ func (c *pageCache) lookup(key string, now time.Time) (*pageHandle, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.entries[key]
-	if !ok {
+	if !ok || c.closed {
 		return nil, false
 	}
-	if !entry.expiresAt.IsZero() && !now.Before(entry.expiresAt) {
+	if entry.retired || entry.expired(now) {
 		c.removeLocked(entry)
 		return nil, false
 	}
@@ -221,7 +244,14 @@ func (c *pageCache) reserve(bytes int64, now time.Time) (*cacheReservation, erro
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.evictUntilLocked(bytes, now)
+	if c.closed {
+		return nil, errCacheFull
+	}
+	c.sweepLocked(now)
+	if len(c.pending) >= maxPendingCleanup {
+		return nil, errCacheFull
+	}
+	c.evictUntilLocked(bytes)
 	if c.usedBytes+c.reserved+bytes > c.maxBytes {
 		return nil, errCacheFull
 	}
@@ -234,41 +264,40 @@ func (r *cacheReservation) release() {
 		return
 	}
 	r.cache.mu.Lock()
-	if r.bytes > 0 {
+	defer r.cache.mu.Unlock()
+	if r.jobDir != "" && (!r.cache.ownedDirectory(r.jobDir, ".job-") || r.cache.removeAll(r.jobDir) != nil) {
+		// Keep the full remaining reservation charged until a sweep can delete
+		// the directory. Pending records contain owned paths and byte counts only.
+		r.cache.pending[r.jobDir] = r.bytes
+	} else {
 		r.cache.reserved -= r.bytes
 	}
 	r.used = true
-	r.cache.mu.Unlock()
 }
 
 func (r *cacheReservation) commit(key, fingerprint, outputDir string, pages []archive.Page, now time.Time) (*cacheEntry, error) {
-	if r == nil || r.cache == nil || r.used {
+	if r == nil || r.cache == nil || r.used || r.committed {
 		return nil, errCacheFull
 	}
 	c := r.cache
 	if len(pages) == 0 {
-		r.release()
 		return nil, fmt.Errorf("no pages extracted")
 	}
 	converted := make([]cachedPage, 0, len(pages))
 	var total int64
 	for _, page := range pages {
 		if !validPageFile(outputDir, page.File) || page.Size < 1 || page.Size > MaxPageBytes {
-			r.release()
 			return nil, fmt.Errorf("invalid extracted page")
 		}
 		linkInfo, err := os.Lstat(page.File)
 		if err != nil || !linkInfo.Mode().IsRegular() {
-			r.release()
 			return nil, fmt.Errorf("invalid extracted page")
 		}
 		info, err := os.Stat(page.File)
 		if err != nil || !info.Mode().IsRegular() || info.Size() != page.Size {
-			r.release()
 			return nil, fmt.Errorf("invalid extracted page")
 		}
 		if total > MaxTotalBytes-page.Size {
-			r.release()
 			return nil, fmt.Errorf("extracted pages exceed total limit")
 		}
 		total += page.Size
@@ -280,28 +309,23 @@ func (r *cacheReservation) commit(key, fingerprint, outputDir string, pages []ar
 		})
 	}
 	if total > r.bytes {
-		r.release()
 		return nil, errCacheFull
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed || normalizeKey(key) == "" {
+		return nil, errCacheFull
+	}
 	if existing := c.entries[key]; existing != nil {
-		if existing.active > 0 {
-			c.reserved -= r.bytes
-			r.used = true
+		if existing.active > 0 || !c.removeLocked(existing) {
 			return nil, errCacheFull
 		}
-		c.removeLocked(existing)
 	}
 	entryRoot := filepath.Join(c.root, ".entry-"+key)
 	if !c.ownedPath(entryRoot) || !c.ownedPath(outputDir) {
-		c.reserved -= r.bytes
-		r.used = true
 		return nil, errCacheFull
 	}
 	if err := os.Rename(outputDir, entryRoot); err != nil {
-		c.reserved -= r.bytes
-		r.used = true
 		return nil, fmt.Errorf("publish cache entry")
 	}
 	for i := range converted {
@@ -318,8 +342,11 @@ func (r *cacheReservation) commit(key, fingerprint, outputDir string, pages []ar
 	if total > 0 {
 		c.usedBytes += total
 	}
-	c.reserved -= r.bytes
-	r.used = true
+	// The input archive and any other job files are still covered by the
+	// remaining reservation. Only release it after job-directory cleanup.
+	c.reserved -= total
+	r.bytes -= total
+	r.committed = true
 	c.entries[key] = entry
 	return entry, nil
 }
@@ -331,15 +358,11 @@ func fallbackExpiry(fingerprint string, now time.Time, ttl time.Duration) time.T
 	return time.Time{}
 }
 
-func (c *pageCache) evictUntilLocked(incoming int64, now time.Time) {
+func (c *pageCache) evictUntilLocked(incoming int64) {
 	for c.usedBytes+c.reserved+incoming > c.maxBytes {
 		var oldest *cacheEntry
 		for _, entry := range c.entries {
-			if entry.active > 0 || (!entry.expiresAt.IsZero() && !now.Before(entry.expiresAt)) {
-				if !entry.expiresAt.IsZero() && !now.Before(entry.expiresAt) && entry.active == 0 {
-					oldest = entry
-					break
-				}
+			if entry.active > 0 || entry.retired {
 				continue
 			}
 			if oldest == nil || entry.lastUsed.Before(oldest.lastUsed) {
@@ -353,19 +376,59 @@ func (c *pageCache) evictUntilLocked(incoming int64, now time.Time) {
 	}
 }
 
-func (c *pageCache) removeLocked(entry *cacheEntry) {
-	if entry == nil || entry.active > 0 {
-		return
+func (c *pageCache) removeLocked(entry *cacheEntry) bool {
+	if entry == nil {
+		return true
+	}
+	entry.retired = true
+	if entry.active > 0 || !c.ownedDirectory(entry.root, ".entry-") {
+		return false
+	}
+	if err := c.removeAll(entry.root); err != nil {
+		return false
 	}
 	delete(c.entries, entry.key)
-	if entry.total <= c.usedBytes {
-		c.usedBytes -= entry.total
-	} else {
-		c.usedBytes = 0
+	c.usedBytes -= entry.total
+	return true
+}
+
+func (entry *cacheEntry) expired(now time.Time) bool {
+	return !now.Before(entry.lastUsed.Add(CacheIdleTTL)) ||
+		(!entry.expiresAt.IsZero() && !now.Before(entry.expiresAt))
+}
+
+// sweep is also called without request traffic by the runtime's timer.
+func (c *pageCache) sweep(now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.closed {
+		c.sweepLocked(now)
 	}
-	if c.ownedPath(entry.root) {
-		_ = os.RemoveAll(entry.root)
+}
+
+func (c *pageCache) sweepLocked(now time.Time) {
+	c.retryPendingLocked()
+	for _, entry := range c.entries {
+		if entry.retired || entry.expired(now) {
+			c.removeLocked(entry)
+		}
 	}
+}
+
+func (c *pageCache) retryPendingLocked() {
+	for path, bytes := range c.pending {
+		if c.ownedDirectory(path, ".job-") && c.removeAll(path) == nil {
+			delete(c.pending, path)
+			c.reserved -= bytes
+		}
+	}
+}
+
+// Cleanup can delete only a direct, plugin-named child of the leased cache
+// root. It never deletes the configured root, marker, lock or caller paths.
+func (c *pageCache) ownedDirectory(path, prefix string) bool {
+	return filepath.Dir(path) == c.root && strings.HasPrefix(filepath.Base(path), prefix) &&
+		len(filepath.Base(path)) > len(prefix)
 }
 
 func validPageFile(outputDir, pagePath string) bool {

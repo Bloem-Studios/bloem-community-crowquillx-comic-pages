@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -49,7 +51,11 @@ func TestReleaseBinaryThroughSiloGRPC(t *testing.T) {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest["plugin_id"] != "dev.crowquillx.comic-pages" || manifest["version"] != "0.1.0" {
+	var expectedManifest map[string]any
+	if err := json.Unmarshal(read(t, "../manifest.json"), &expectedManifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest["plugin_id"] != "dev.crowquillx.comic-pages" || manifest["version"] != expectedManifest["version"] {
 		t.Fatalf("unexpected manifest identity: %v %v", manifest["plugin_id"], manifest["version"])
 	}
 	binaryBytes := read(t, binary)
@@ -165,10 +171,11 @@ func exercise(t *testing.T, binary string, archive []byte, expected [][]byte, ap
 		}
 	}))
 	defer upstream.Close()
+	command := exec.Command(binary)
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: sdkruntime.HandshakeConfig(),
 		Plugins:         sdkruntime.DefaultPluginSet(sdkruntime.CapabilityServers{}),
-		Cmd:             exec.Command(binary), AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
+		Cmd:             command, AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
 		Logger: hclog.NewNullLogger(),
 	})
 	defer client.Kill()
@@ -181,7 +188,8 @@ func exercise(t *testing.T, binary string, archive []byte, expected [][]byte, ap
 		t.Fatal(err)
 	}
 	rpc := dispensed.(*sdkruntime.Client)
-	config, err := structpb.NewStruct(map[string]any{"base_url": upstream.URL, "cache_dir": t.TempDir()})
+	cacheDir := t.TempDir()
+	config, err := structpb.NewStruct(map[string]any{"base_url": upstream.URL, "cache_dir": cacheDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,6 +275,36 @@ func exercise(t *testing.T, binary string, archive []byte, expected [][]byte, ap
 	if downloads.Load() != 1 {
 		t.Fatalf("archive downloaded %d times", downloads.Load())
 	}
+	items, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if strings.HasPrefix(item.Name(), ".job-") {
+			t.Fatalf("completed job left temporary files: %s", item.Name())
+		}
+	}
+	var cachedBytes int64
+	if err := filepath.WalkDir(cacheDir, func(path string, item fs.DirEntry, err error) error {
+		if err != nil || item.IsDir() || item.Name() == ".lock" || item.Name() == ".silo-comic-pages-owner" {
+			return err
+		}
+		info, err := item.Info()
+		if err == nil {
+			cachedBytes += info.Size()
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var expectedBytes int64
+	for _, page := range expected {
+		expectedBytes += int64(len(page))
+	}
+	if cachedBytes != expectedBytes {
+		t.Fatalf("cache held %d bytes, expected only %d image bytes", cachedBytes, expectedBytes)
+	}
+	t.Logf("cache after preparation: %d image bytes; no temporary archive", cachedBytes)
 	body["offset"] = 0
 	body["cache_key"] = strings.Repeat("0", 64)
 	if response := call("/v1/page/0", body, "7"); response.StatusCode != 409 {
@@ -276,5 +314,28 @@ func exercise(t *testing.T, binary string, archive []byte, expected [][]byte, ap
 	revoked.Store(true)
 	if response := call("/v1/page/0", body, "7"); response.StatusCode != 403 {
 		t.Fatalf("cached image after authorization revoked: HTTP %d", response.StatusCode)
+	}
+	if apiVersion == "v2" {
+		if err := command.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for !client.Exited() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !client.Exited() {
+			t.Fatal("plugin did not exit after SIGTERM")
+		}
+	} else {
+		client.Kill()
+	}
+	items, err = os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.Name() != ".lock" && item.Name() != ".silo-comic-pages-owner" {
+			t.Fatalf("graceful plugin shutdown left cached data: %s", item.Name())
+		}
 	}
 }

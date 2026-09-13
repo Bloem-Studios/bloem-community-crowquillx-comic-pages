@@ -14,6 +14,7 @@ import (
 
 const (
 	ChunkBytes         int64 = 1 << 20
+	DefaultCacheBytes  int64 = 2 << 30
 	MaxCacheBytes      int64 = 4 << 30
 	MaxArchiveBytes    int64 = 512 << 20
 	MaxPageBytes       int64 = 32 << 20
@@ -21,6 +22,8 @@ const (
 	MaxEntries               = 2048
 	MaxDictionaryBytes int64 = 64 << 20
 	CacheFallbackTTL         = 10 * time.Minute
+	CacheIdleTTL             = 30 * time.Minute
+	CacheSweepInterval       = time.Minute
 	JobTimeout               = 120 * time.Second
 	PreparationWait          = 3 * time.Second
 	UpstreamTimeout          = 2 * time.Second
@@ -37,7 +40,7 @@ type Config struct {
 
 func defaultConfig() Config {
 	return Config{
-		CacheSize: MaxCacheBytes,
+		CacheSize: DefaultCacheBytes,
 		CacheTTL:  CacheFallbackTTL,
 		Limits: archive.Limits{
 			MaxEntries:         MaxEntries,

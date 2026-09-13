@@ -32,9 +32,10 @@ directory.
 
 Use a separate cache directory for each installation. The plugin rejects
 nonempty directories it does not own and locks its cache against concurrent
-use. Before downloading, it reserves space for the configured maximum archive
-plus maximum extracted bytes: 1.5 GiB with the defaults. If you lower the cache
-limit below that sum, lower the corresponding archive or extraction limit too.
+use. Before downloading, it checks that the cache budget has room for the maximum
+archive plus maximum extracted bytes: 1.5 GiB with the defaults. Files consume
+space only as bytes are downloaded or extracted. If you lower the cache limit
+below that sum, lower the corresponding archive or extraction limit too.
 
 Update the Aidoku Silo source to v5 or newer. Enter the plugin's installation ID
 from Silo's Installed tab in **Reading → Comic Pages plugin installation ID**.
@@ -62,9 +63,31 @@ clients cannot supply arbitrary URLs or filesystem paths. Cached images remain
 subject to Silo access checks. Restarting the plugin or eviction can invalidate
 an open chapter; reopen it to prepare a fresh page list.
 
+## Disk usage and automatic cleanup
+
+Version 0.1.1 defaults to a **2 GiB cache budget**, covering both cached images
+and temporary extraction data. Old chapters are evicted when a new job needs
+space. `max_cache_bytes` can set a different budget up to 4 GiB. An explicit
+value saved in an existing installation takes precedence over the new default.
+
+Downloaded archive copies and partial extraction files are removed when a job
+finishes or fails. Completed pages expire after **30 minutes without access**,
+with cleanup every minute even when no requests arrive. Active page reads keep
+their files until the read finishes. Silo's original comic files are unchanged.
+
+Graceful shutdown and reconfiguration clear the cache. After a crash, forced
+kill, or power loss, the next startup removes leftover jobs and pages before
+accepting new work. A stopped process cannot run cleanup; if you permanently
+uninstall it after a forced stop, remove its dedicated cache directory too.
+
+Deletion failures keep their disk budget charged and are retried. New extraction
+can return `cache_full` while undeletable data occupies the budget. Filesystem
+metadata and block rounding add some overhead beyond the file-byte budget.
+The plugin executable is about 15 MB and is separate from this cache budget.
+
 ## Limits
 
-| Resource | Default and maximum |
+| Resource | Default / maximum |
 | --- | --- |
 | Compressed archive | 512 MiB |
 | Decoded entry or image | 32 MiB |
@@ -72,7 +95,7 @@ an open chapter; reopen it to prepare a fresh page list.
 | Decoded bytes across all entries | 1 GiB |
 | Archive entries | 2,048 |
 | RAR dictionary window | 64 MiB |
-| Extraction cache | 4 GiB |
+| Extraction cache | 2 GiB / 4 GiB |
 | Concurrent extraction jobs | 1 |
 | Download and extraction job deadline | 120 seconds |
 | Page response chunk | 1 MiB |
@@ -95,7 +118,7 @@ Go 1.26 is required. The plugin is pure Go and builds with `CGO_ENABLED=0`.
 
 ```sh
 go mod download
-go test ./...
+go test -count=1 ./...
 go vet ./...
 make build
 bin/plugin manifest
@@ -105,7 +128,8 @@ bin/plugin manifest
 adapter own authorization, background work, and cache lifecycle. Synthetic
 RAR4/RAR5 normal and solid fixtures contain original generated PNGs; provenance
 is recorded in [testdata/fixtures/README.md](testdata/fixtures/README.md).
-See [the protocol](docs/protocol.md) and [release validation](docs/validation.md)
+See [the protocol](docs/protocol.md), [cleanup validation](docs/cache-cleanup.md),
+and [initial release validation](docs/validation.md)
 for the request contract, measured artifacts, and test coverage.
 
 ## License

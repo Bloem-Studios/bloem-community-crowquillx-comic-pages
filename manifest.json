@@ -1,6 +1,6 @@
 {
   "plugin_id": "dev.crowquillx.comic-pages",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "supported_platforms": [
@@ -48,7 +48,7 @@
             "key": "max_cache_bytes",
             "label": "Maximum cache bytes",
             "control": "ADMIN_FORM_CONTROL_NUMBER",
-            "placeholder": "4294967296"
+            "placeholder": "2147483648"
           },
           {
             "key": "max_entries",

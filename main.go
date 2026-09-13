@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
 	publicmanifest "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
@@ -67,6 +69,15 @@ func main() {
 		return
 	}
 	backend := silo.NewBackend()
+	defer backend.Close()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	go func() {
+		<-signals
+		backend.Close()
+		os.Exit(0)
+	}()
 	runtimeServer := &runtimeServer{manifest: manifest, backend: backend}
 	sdkruntime.Serve(sdkruntime.ServeConfig{
 		Servers: sdkruntime.CapabilityServers{
