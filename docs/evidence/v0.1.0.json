@@ -1,0 +1,21 @@
+{
+  "tag": "v0.1.0",
+  "commit": "1559a3e",
+  "release": "https://github.com/crowquillx/silo-comic-pages/releases/tag/v0.1.0",
+  "ci": "https://github.com/crowquillx/silo-comic-pages/actions/runs/34782654714",
+  "release_workflow": "https://github.com/crowquillx/silo-comic-pages/actions/runs/34782662586",
+  "binaries": [
+    {
+      "platform": "linux/amd64",
+      "bytes": 15315106,
+      "sha256": "a5f49647450babefb6a4a095278d6a447ae9c050812aecca71578d9e021a10f5",
+      "url": "https://github.com/crowquillx/silo-comic-pages/releases/download/v0.1.0/plugin-linux-amd64"
+    },
+    {
+      "platform": "linux/arm64",
+      "bytes": 14418082,
+      "sha256": "51f0409219b4cafa87ec2d352f3dcfc389f39b1c1ad7c870ea729dcbdce96358",
+      "url": "https://github.com/crowquillx/silo-comic-pages/releases/download/v0.1.0/plugin-linux-arm64"
+    }
+  ]
+}

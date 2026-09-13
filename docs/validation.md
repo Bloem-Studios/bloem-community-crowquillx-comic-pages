@@ -32,6 +32,23 @@ builds embed Git revision metadata, so the published artifacts and their exact
 SHA-256 hashes are recorded in the release's `repository.json` and
 `checksums.txt`. The amd64 executable was exercised; arm64 was cross-compiled.
 
+## Published artifact verification
+
+[GitHub CI](https://github.com/crowquillx/silo-comic-pages/actions/runs/34782654714)
+and the [release workflow](https://github.com/crowquillx/silo-comic-pages/actions/runs/34782662586)
+succeeded for commit `1559a3e`. Both downloaded executables matched the published
+catalog and `checksums.txt`; the amd64 executable's own manifest checksum also
+matched. The release sizes are 15,315,106 bytes (amd64) and 14,418,082 bytes
+(arm64). Exact SHA-256 hashes are in [the verification record](evidence/v0.1.0.json).
+
+The downloaded amd64 release passed all six SDK gRPC integration cases:
+
+```sh
+gh release download v0.1.0 --repo crowquillx/silo-comic-pages --dir dist/published
+chmod +x dist/published/plugin-linux-amd64
+COMIC_PAGES_TEST_BINARY="$PWD/dist/published/plugin-linux-amd64" go test -count=1 -v ./integration
+```
+
 ## Verification commands
 
 ```sh
