@@ -33,7 +33,7 @@ func run(manifestPath, assets, output string) error {
 	if err != nil {
 		return err
 	}
-	const repo = "https://github.com/crowquillx/silo-comic-pages"
+	const repo = "https://github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages"
 	if err := publicmanifest.ValidateCatalogPresentation(manifest, repo); err != nil {
 		return err
 	}
