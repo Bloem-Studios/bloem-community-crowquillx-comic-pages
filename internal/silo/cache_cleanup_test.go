@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crowquillx/silo-comic-pages/internal/archive"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/archive"
 )
 
 func cleanupTestCache(t *testing.T, maxBytes int64) *pageCache {

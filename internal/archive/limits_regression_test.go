@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	comicarchive "github.com/crowquillx/silo-comic-pages/internal/archive"
+	comicarchive "github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/archive"
 )
 
 func TestImagePixelLimitBeforeFullDecode(t *testing.T) {

@@ -107,12 +107,12 @@
   "presentation": {
     "display_name": "Comic Pages",
     "summary": "Read CBR/RAR comics in Aidoku using server-side page extraction.",
-    "description_markdown": "Extracts comic pages from RAR4, RAR5 and ZIP archives using the reader's existing Silo access. Supports solid RAR archives, natural page ordering and a bounded extraction cache. Linux amd64 and arm64. No media filesystem mapping or proprietary unrar executable is required.",
-    "setup_markdown": "Configure the Silo base URL reachable from the plugin and a dedicated writable cache directory. Update the Aidoku Silo source to v5 or newer, then enter this installation's ID in Reading \u2192 Comic Pages plugin installation ID. See the README for resource limits.",
+    "description_markdown": "Extracts comic pages from RAR4, RAR5 and ZIP archives using the reader's existing Silo access. Supports solid RAR archives, natural page ordering and a bounded extraction cache. Linux amd64 and arm64. No media filesystem mapping or proprietary unrar executable is required.\n\nCommunity plugin by crowquillx (https://github.com/crowquillx/silo-comic-pages), built for Bloem on the Bloem plugin SDK.",
+    "setup_markdown": "Configure the Silo base URL reachable from the plugin and a dedicated writable cache directory. Update the Aidoku Silo source to v5 or newer, then enter this installation's ID in Reading → Comic Pages plugin installation ID. See the README for resource limits.",
     "homepage_url": "https://github.com/crowquillx/silo-comic-pages",
-    "source_url": "https://github.com/crowquillx/silo-comic-pages",
-    "support_url": "https://github.com/crowquillx/silo-comic-pages/issues",
-    "changelog_url": "https://github.com/crowquillx/silo-comic-pages/releases",
+    "source_url": "https://github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages",
+    "support_url": "https://github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/issues",
+    "changelog_url": "https://github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/releases",
     "publisher_name": "crowquillx",
     "publisher_url": "https://github.com/crowquillx",
     "license_spdx": "MIT"

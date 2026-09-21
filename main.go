@@ -10,13 +10,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
-	publicmanifest "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
-	sdkruntime "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
-	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtimedefault"
-	"github.com/crowquillx/silo-comic-pages/internal/archive"
-	"github.com/crowquillx/silo-comic-pages/internal/server"
-	"github.com/crowquillx/silo-comic-pages/internal/silo"
+	pluginv1 "github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
+	publicmanifest "github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginsdk/manifest"
+	sdkruntime "github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginsdk/runtime"
+	"github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginsdk/runtimedefault"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/archive"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/server"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/silo"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

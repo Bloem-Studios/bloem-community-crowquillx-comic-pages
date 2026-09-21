@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crowquillx/silo-comic-pages/internal/archive"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/archive"
 )
 
 type testUpstream struct {

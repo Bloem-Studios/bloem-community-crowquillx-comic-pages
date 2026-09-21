@@ -1,3 +1,12 @@
+## Bloem community build
+
+This is Bloem's community build of [crowquillx/silo-comic-pages](https://github.com/crowquillx/silo-comic-pages) by **crowquillx**
+(contributors: crowquillx). It is ported to the Bloem plugin SDK and listed in the
+Bloem community plugin catalog. All credit for the plugin goes to its author; please
+report plugin behavior issues upstream. See [NOTICE](NOTICE) for provenance.
+
+---
+
 # Silo Comic Pages
 
 A Silo plugin that extracts CBR/RAR and CBZ/ZIP archives on the server and

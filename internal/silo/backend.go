@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crowquillx/silo-comic-pages/internal/archive"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/archive"
 )
 
 // Request is the authenticated plugin request body. Token is deliberately

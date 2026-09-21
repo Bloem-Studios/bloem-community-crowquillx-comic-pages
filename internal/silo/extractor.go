@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 
-	"github.com/crowquillx/silo-comic-pages/internal/archive"
+	"github.com/Bloem-Studios/bloem-community-crowquillx-comic-pages/internal/archive"
 )
 
 // runExtractorChild invokes the plugin executable's private extract command.
